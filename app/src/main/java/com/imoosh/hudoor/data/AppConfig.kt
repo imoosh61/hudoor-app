@@ -1,23 +1,46 @@
 package com.imoosh.hudoor.data
 
+import android.content.Context
+
 /**
- * ====== عدّل هذين السطرين فقط ======
- * خذ القيم من: Firebase Console > Project settings > General > Your apps > Web app
+ * بيانات ربط Firebase.
+ * تُدخل مرة واحدة من شاشة الإعداد عند أول تشغيل، وتُحفظ في الجهاز.
+ * لا حاجة لتعديل أي شيء في الكود.
  */
 object AppConfig {
-    const val PROJECT_ID = "PUT_YOUR_PROJECT_ID_HERE"
-    const val API_KEY = "PUT_YOUR_WEB_API_KEY_HERE"
 
-    // لا تعدّل ما تحت هذا السطر
-    const val FS_BASE = "https://firestore.googleapis.com/v1/projects"
+    var projectId: String = ""
+        private set
+    var apiKey: String = ""
+        private set
+
+    fun load(ctx: Context) {
+        val p = Prefs(ctx)
+        projectId = p.projectId
+        apiKey = p.apiKey
+    }
+
+    fun save(ctx: Context, pid: String, key: String) {
+        val p = Prefs(ctx)
+        p.projectId = pid
+        p.apiKey = key
+        projectId = pid
+        apiKey = key
+    }
+
+    val isReady: Boolean get() = projectId.isNotBlank() && apiKey.isNotBlank()
+
+    private const val FS = "https://firestore.googleapis.com/v1/projects"
     const val IDENTITY = "https://identitytoolkit.googleapis.com/v1/accounts"
 
     fun docUrl(path: String) =
-        "$FS_BASE/$PROJECT_ID/databases/(default)/documents/$path?key=$API_KEY"
+        "$FS/$projectId/databases/(default)/documents/$path?key=$apiKey"
 
     fun commitUrl() =
-        "$FS_BASE/$PROJECT_ID/databases/(default)/documents:commit?key=$API_KEY"
+        "$FS/$projectId/databases/(default)/documents:commit?key=$apiKey"
 
     fun docName(path: String) =
-        "projects/$PROJECT_ID/databases/(default)/documents/$path"
+        "projects/$projectId/databases/(default)/documents/$path"
+
+    fun signInUrl() = "$IDENTITY:signInWithPassword?key=$apiKey"
 }

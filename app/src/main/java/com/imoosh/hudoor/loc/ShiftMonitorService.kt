@@ -79,6 +79,7 @@ class ShiftMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
+        AppConfig.load(this)
         channels()
         startForeground(NOTIF_ID, ongoing("جاري متابعة الدوام"))
         scope.launch { boot() }

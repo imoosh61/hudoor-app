@@ -26,7 +26,7 @@ object Fs {
             put("password", password)
             put("returnSecureToken", true)
         }
-        val res = post("${AppConfig.IDENTITY}:signInWithPassword?key=${AppConfig.API_KEY}", body, null)
+        val res = post(AppConfig.signInUrl(), body, null)
         return Session(
             idToken = res.getString("idToken"),
             uid = res.getString("localId"),

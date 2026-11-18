@@ -60,6 +60,7 @@ private val CardDark = Color(0xFF1E293B)
 @Composable
 fun AppRoot(act: MainActivity) {
     val prefs = remember { Prefs(act) }
+    var configured by remember { mutableStateOf(com.imoosh.hudoor.data.AppConfig.isReady) }
     var loggedIn by remember { mutableStateOf(prefs.isLoggedIn) }
 
     MaterialTheme(
@@ -70,9 +71,62 @@ fun AppRoot(act: MainActivity) {
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = BgDark) {
-            if (!loggedIn) LoginScreen(act) { loggedIn = true }
-            else HomeScreen(act) { loggedIn = false }
+            when {
+                !configured -> SetupScreen(act) { configured = true }
+                !loggedIn -> LoginScreen(act) { loggedIn = true }
+                else -> HomeScreen(act) { loggedIn = false }
+            }
         }
+    }
+}
+
+// ================== شاشة ربط Firebase (أول تشغيل فقط) ==================
+
+@Composable
+private fun SetupScreen(act: MainActivity, onDone: () -> Unit) {
+    var pid by remember { mutableStateOf("") }
+    var key by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf("") }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("ربط النظام", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "أدخل البيانات التي أعطاك المسؤول. تُطلب مرة واحدة فقط.",
+            fontSize = 13.sp, color = Color(0xFF94A3B8)
+        )
+        Spacer(Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = pid, onValueChange = { pid = it.trim() },
+            label = { Text("Project ID") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = key, onValueChange = { key = it.trim() },
+            label = { Text("API Key") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (err.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(err, color = Red, fontSize = 13.sp)
+        }
+
+        Spacer(Modifier.height(22.dp))
+        Button(
+            onClick = {
+                if (pid.isBlank() || key.isBlank()) { err = "أدخل القيمتين"; return@Button }
+                com.imoosh.hudoor.data.AppConfig.save(act, pid, key)
+                onDone()
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Green)
+        ) { Text("متابعة", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
     }
 }
 

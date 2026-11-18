@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.imoosh.hudoor.data.AppConfig.load(this)
         askPermissions()
         setContent { AppRoot(this) }
     }

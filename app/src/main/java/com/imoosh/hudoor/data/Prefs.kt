@@ -7,6 +7,14 @@ class Prefs(ctx: Context) {
     private val sp: SharedPreferences =
         ctx.getSharedPreferences("hudoor", Context.MODE_PRIVATE)
 
+    var projectId: String
+        get() = sp.getString("projectId", "") ?: ""
+        set(v) = sp.edit().putString("projectId", v).apply()
+
+    var apiKey: String
+        get() = sp.getString("apiKey", "") ?: ""
+        set(v) = sp.edit().putString("apiKey", v).apply()
+
     var email: String
         get() = sp.getString("email", "") ?: ""
         set(v) = sp.edit().putString("email", v).apply()
@@ -45,5 +53,12 @@ class Prefs(ctx: Context) {
 
     val isLoggedIn: Boolean get() = email.isNotEmpty() && password.isNotEmpty()
 
-    fun logout() = sp.edit().clear().apply()
+    /** الخروج لا يمحو بيانات ربط Firebase */
+    fun logout() {
+        val pid = projectId
+        val key = apiKey
+        sp.edit().clear().apply()
+        projectId = pid
+        apiKey = key
+    }
 }
