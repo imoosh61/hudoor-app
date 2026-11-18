@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة متابعة الحضور</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --line:#334155; --txt:#e2e8f0;
+    --dim:#94a3b8; --green:#16a34a; --red:#dc2626; --amber:#d97706; --blue:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;font-size:15px}
+  .wrap{max-width:1000px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0}
+  h2{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:16px;margin-bottom:14px}
+  label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  input,select,textarea{width:100%;padding:10px 12px;background:#0b1220;color:var(--txt);
+    border:1px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit}
+  button{padding:11px 16px;border:0;border-radius:9px;background:var(--green);color:#fff;
+    font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  button.sec{background:#334155}
+  button.danger{background:var(--red)}
+  button.blue{background:var(--blue)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:130px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .stat{background:#0b1220;border:1px solid var(--line);border-radius:11px;padding:13px}
+  .stat b{display:block;font-size:19px;margin-top:3px}
+  .stat span{font-size:11px;color:var(--dim)}
+  #map{height:300px;border-radius:11px;margin-top:10px;background:#0b1220}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 7px;text-align:right;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:600;font-size:11px;white-space:nowrap}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600}
+  .ok{background:rgba(22,163,74,.18);color:#4ade80}
+  .bad{background:rgba(220,38,38,.18);color:#f87171}
+  .warn{background:rgba(217,119,6,.18);color:#fbbf24}
+  .muted{color:var(--dim);font-size:12px;line-height:1.7}
+  .dot{width:9px;height:9px;border-radius:99px;display:inline-block}
+  .scroll{overflow-x:auto}
+  .hide{display:none!important}
+  .center{max-width:380px;margin:9vh auto;text-align:center}
+  .alert{background:rgba(220,38,38,.14);border:1px solid var(--red);padding:12px;
+    border-radius:10px;margin-bottom:12px;font-size:13px}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tabs button{background:#0b1220;border:1px solid var(--line);font-weight:500}
+  .tabs button.on{background:var(--green);border-color:var(--green)}
+  .hint{font-size:11px;color:var(--dim);margin-top:4px}
+</style>
+</head>
+<body>
+
+<!-- ========== إعداد أول مرة ========== -->
+<div id="setup" class="wrap hide">
+  <div class="center">
+    <h1>ربط Firebase</h1>
+    <p class="muted" style="margin:14px 0 20px">
+      الصقي القيمتين من Firebase Console ← إعدادات المشروع ← General ← Your apps.
+      تُحفظ في هذا المتصفح فقط.
+    </p>
+    <div class="card" style="text-align:right">
+      <label>Project ID</label>
+      <input id="s_pid" placeholder="my-attendance-app">
+      <label>Web API Key</label>
+      <input id="s_key" placeholder="AIzaSy...">
+      <div style="margin-top:16px"><button id="s_save" style="width:100%">حفظ ومتابعة</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== تسجيل الدخول ========== -->
+<div id="login" class="wrap hide">
+  <div class="center">
+    <h1>لوحة متابعة الحضور</h1>
+    <p class="muted" style="margin:12px 0 18px">دخول المسؤول</p>
+    <div class="card" style="text-align:right">
+      <label>البريد الإلكتروني</label>
+      <input id="l_email" type="email" autocomplete="username">
+      <label>كلمة المرور</label>
+      <input id="l_pw" type="password" autocomplete="current-password">
+      <div id="l_err" class="muted" style="color:#f87171;margin-top:10px"></div>
+      <div style="margin-top:16px"><button id="l_btn" style="width:100%">دخول</button></div>
+      <div style="margin-top:12px;text-align:center">
+        <button class="sec" id="l_reset" style="padding:7px 12px;font-size:12px">
+          تغيير إعدادات Firebase
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== اللوحة ========== -->
+<div id="app" class="wrap hide">
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <h1 style="flex:1">لوحة متابعة الحضور</h1>
+    <button class="sec" id="out_btn" style="padding:8px 14px;font-size:13px">خروج</button>
+  </div>
+
+  <div id="alerts"></div>
+
+  <!-- الحالة الحيّة -->
+  <div class="card">
+    <h2><span class="dot" id="liveDot" style="background:var(--dim)"></span> الحالة الآن</h2>
+    <div class="grid" id="stats">
+      <div class="stat"><span>الموظف</span><b id="st_name">—</b></div>
+      <div class="stat"><span>الحالة</span><b id="st_shift">—</b></div>
+      <div class="stat"><span>الموقع</span><b id="st_in">—</b></div>
+      <div class="stat"><span>المسافة عن المقر</span><b id="st_dist">—</b></div>
+      <div class="stat"><span>آخر نبضة</span><b id="st_seen">—</b></div>
+      <div class="stat"><span>البطارية</span><b id="st_batt">—</b></div>
+    </div>
+    <div style="margin-top:12px" class="row">
+      <button class="blue" id="btn_locate">عرض موقعه على الخريطة</button>
+      <button class="sec" id="btn_perm">أذن بالانصراف المبكر اليوم</button>
+    </div>
+    <div class="hint" id="permHint"></div>
+  </div>
+
+  <!-- موقع العمل -->
+  <div class="card">
+    <h2>موقع العمل والنطاق</h2>
+    <p class="muted">اضغط على الخريطة لتحديد مقر العمل، أو اكتب الإحداثية يدوياً.</p>
+    <div id="map"></div>
+    <div class="row" style="margin-top:12px">
+      <div><label>خط العرض (Latitude)</label><input id="w_lat" inputmode="decimal"></div>
+      <div><label>خط الطول (Longitude)</label><input id="w_lng" inputmode="decimal"></div>
+      <div><label>نصف قطر النطاق (متر)</label><input id="w_rad" type="number" min="20" max="2000"></div>
+    </div>
+    <div class="row">
+      <div><label>بداية الدوام</label><input id="w_start" type="time"></div>
+      <div><label>نهاية الدوام</label><input id="w_end" type="time"></div>
+      <div><label>سماح التأخير (دقيقة)</label><input id="w_grace" type="number" min="0" max="120"></div>
+    </div>
+    <div class="row">
+      <div><label>أيام العمل</label>
+        <select id="w_days">
+          <option value="1,2,3,4,5">الأحد — الخميس</option>
+          <option value="1,2,3,4,5,6">الأحد — الجمعة</option>
+          <option value="2,3,4,5,6">الاثنين — الجمعة</option>
+          <option value="1,2,3,4,5,6,7">كل الأيام</option>
+        </select>
+      </div>
+      <div><label>أقصى هامش خطأ للـ GPS (متر)</label><input id="w_acc" type="number" min="10" max="200"></div>
+      <div><label>مسافة إضافية قبل إشعار المغادرة</label><input id="w_buf" type="number" min="0" max="300"></div>
+    </div>
+    <div class="row">
+      <div><label>منع الأجهزة المروتة</label>
+        <select id="w_root"><option value="1">نعم</option><option value="0">لا</option></select>
+      </div>
+      <div><label>إلزام شبكة واي فاي المكتب</label>
+        <select id="w_rw"><option value="0">لا</option><option value="1">نعم</option></select>
+      </div>
+      <div><label>BSSID راوتر المكتب</label><input id="w_bssid" placeholder="aa:bb:cc:dd:ee:ff"></div>
+    </div>
+    <div class="row">
+      <div><label>توكن بوت تيليجرام</label><input id="w_tgt" placeholder="123456:ABC-..."></div>
+      <div><label>معرّف محادثتك (Chat ID)</label><input id="w_tgc" placeholder="123456789"></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="w_save">حفظ الإعدادات</button>
+      <button class="sec" id="w_test">جرّب إشعار تيليجرام</button>
+      <button class="sec" id="w_here">موقعي الحالي</button>
+    </div>
+    <div class="hint" id="w_msg"></div>
+  </div>
+
+  <!-- السجلات -->
+  <div class="card">
+    <h2>السجلات</h2>
+    <div class="tabs">
+      <button class="on" data-tab="att">البصمات</button>
+      <button data-tab="evt">المغادرة والتلاعب</button>
+      <button data-tab="req">طلبات الاستئذان</button>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <div><label>من تاريخ</label><input id="f_from" type="date"></div>
+      <div><label>إلى تاريخ</label><input id="f_to" type="date"></div>
+      <div style="display:flex;align-items:flex-end;gap:8px">
+        <button id="f_go">عرض</button>
+        <button class="sec" id="f_csv">تصدير</button>
+      </div>
+    </div>
+    <div class="scroll"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    <div class="hint" id="t_msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>تقرير الشهر</h2>
+    <div class="grid" id="summary"></div>
+  </div>
+
+  <p class="muted" style="text-align:center;padding:10px 0 30px">
+    السجلات تُكتب بوقت السيرفر ولا يمكن تعديلها أو حذفها — ولا منك.
+  </p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query,
+         where, orderBy, getDocs, limit }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const $ = id => document.getElementById(id);
+const show = id => { ['setup','login','app'].forEach(x => $(x).classList.add('hide'));
+                     $(id).classList.remove('hide'); };
+
+// ---------- إعداد Firebase ----------
+let cfg = null;
+try { cfg = JSON.parse(localStorage.getItem('hudoor_cfg') || 'null'); } catch(e){}
+
+let app, auth, db, map, marker, circle, wp = {}, liveStatus = null, adminEmail = '';
+let tab = 'att', lastRows = [];
+
+if (!cfg) { show('setup'); } else { boot(); }
+
+$('s_save').onclick = () => {
+  const pid = $('s_pid').value.trim(), key = $('s_key').value.trim();
+  if (!pid || !key) return alert('أدخل القيمتين');
+  localStorage.setItem('hudoor_cfg', JSON.stringify({ pid, key }));
+  cfg = { pid, key };
+  boot();
+};
+$('l_reset').onclick = () => { localStorage.removeItem('hudoor_cfg'); location.reload(); };
+
+function boot(){
+  app = initializeApp({
+    apiKey: cfg.key,
+    authDomain: cfg.pid + '.firebaseapp.com',
+    projectId: cfg.pid
+  });
+  auth = getAuth(app);
+  db = getFirestore(app);
+  onAuthStateChanged(auth, u => {
+    if (u) { adminEmail = u.email; show('app'); start(); }
+    else show('login');
+  });
+}
+
+$('l_btn').onclick = async () => {
+  $('l_err').textContent = '';
+  $('l_btn').disabled = true;
+  try {
+    await signInWithEmailAndPassword(auth, $('l_email').value.trim(), $('l_pw').value);
+  } catch (e) {
+    $('l_err').textContent = 'بيانات الدخول غير صحيحة';
+  }
+  $('l_btn').disabled = false;
+};
+$('out_btn').onclick = () => signOut(auth).then(()=>location.reload());
+
+// ---------- الخريطة ----------
+function initMap(lat, lng, rad){
+  if (typeof L === 'undefined') { $('map').innerHTML =
+    '<p class="muted" style="padding:20px">تعذّر تحميل الخريطة — استخدم الإحداثية اليدوية.</p>';
+    return; }
+  if (map) { map.setView([lat,lng], 17); place(lat,lng,rad); return; }
+  map = L.map('map').setView([lat,lng], 17);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  map.on('click', e => {
+    $('w_lat').value = e.latlng.lat.toFixed(6);
+    $('w_lng').value = e.latlng.lng.toFixed(6);
+    place(e.latlng.lat, e.latlng.lng, +$('w_rad').value || 100);
+  });
+  place(lat,lng,rad);
+}
+function place(lat,lng,rad){
+  if (!map) return;
+  if (marker) map.removeLayer(marker);
+  if (circle) map.removeLayer(circle);
+  marker = L.marker([lat,lng]).addTo(map);
+  circle = L.circle([lat,lng], { radius: rad, color:'#16a34a', fillOpacity:.12 }).addTo(map);
+}
+
+$('w_here').onclick = () => {
+  if (!navigator.geolocation) return alert('المتصفح لا يدعم تحديد الموقع');
+  navigator.geolocation.getCurrentPosition(p => {
+    $('w_lat').value = p.coords.latitude.toFixed(6);
+    $('w_lng').value = p.coords.longitude.toFixed(6);
+    initMap(p.coords.latitude, p.coords.longitude, +$('w_rad').value || 100);
+  }, () => alert('تعذّر تحديد موقعك'), { enableHighAccuracy:true });
+};
+
+$('btn_locate').onclick = () => {
+  if (!liveStatus || !liveStatus.lat) return alert('لا يوجد موقع مسجّل بعد');
+  window.open('https://maps.google.com/?q=' + liveStatus.lat + ',' + liveStatus.lng, '_blank');
+};
+
+// ---------- تحميل الإعدادات ----------
+const m2t = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0');
+const t2m = t => { const [h,m] = (t||'0:0').split(':').map(Number); return h*60 + m; };
+
+async function start(){
+  const snap = await getDoc(doc(db,'config','workplace'));
+  wp = snap.exists() ? snap.data() : {
+    lat:24.7136, lng:46.6753, radius:100, shiftStart:480, shiftEnd:960,
+    workDays:'1,2,3,4,5', graceMinutes:10, maxAccuracy:50, exitBuffer:40,
+    tgToken:'', tgChat:'', requireWifi:false, wifiBssid:'', blockRoot:true
+  };
+  $('w_lat').value = wp.lat; $('w_lng').value = wp.lng; $('w_rad').value = wp.radius;
+  $('w_start').value = m2t(wp.shiftStart); $('w_end').value = m2t(wp.shiftEnd);
+  $('w_grace').value = wp.graceMinutes; $('w_days').value = wp.workDays;
+  $('w_acc').value = wp.maxAccuracy; $('w_buf').value = wp.exitBuffer;
+  $('w_tgt').value = wp.tgToken || ''; $('w_tgc').value = wp.tgChat || '';
+  $('w_rw').value = wp.requireWifi ? '1' : '0';
+  $('w_bssid').value = wp.wifiBssid || '';
+  $('w_root').value = wp.blockRoot ? '1' : '0';
+  initMap(+wp.lat, +wp.lng, +wp.radius);
+
+  const t = new Date(), first = new Date(t.getFullYear(), t.getMonth(), 1);
+  $('f_from').value = iso(first); $('f_to').value = iso(t);
+
+  watchStatus();
+  loadTable();
+  if ('Notification' in window && Notification.permission === 'default')
+    Notification.requestPermission();
+}
+
+const iso = d => d.toISOString().slice(0,10);
+
+$('w_save').onclick = async () => {
+  const data = {
+    lat: parseFloat($('w_lat').value), lng: parseFloat($('w_lng').value),
+    radius: parseFloat($('w_rad').value) || 100,
+    shiftStart: t2m($('w_start').value), shiftEnd: t2m($('w_end').value),
+    graceMinutes: parseInt($('w_grace').value) || 0,
+    workDays: $('w_days').value,
+    maxAccuracy: parseFloat($('w_acc').value) || 50,
+    exitBuffer: parseFloat($('w_buf').value) || 40,
+    tgToken: $('w_tgt').value.trim(), tgChat: $('w_tgc').value.trim(),
+    requireWifi: $('w_rw').value === '1', wifiBssid: $('w_bssid').value.trim(),
+    blockRoot: $('w_root').value === '1'
+  };
+  if (isNaN(data.lat) || isNaN(data.lng)) return msg('w_msg','أدخل إحداثية صحيحة', true);
+  if (data.shiftEnd <= data.shiftStart) return msg('w_msg','نهاية الدوام لازم بعد بدايته', true);
+  try {
+    await setDoc(doc(db,'config','workplace'), data, { merge:true });
+    wp = data; place(data.lat, data.lng, data.radius);
+    msg('w_msg','تم الحفظ. التطبيق يقرأ الإعدادات الجديدة مع أول بصمة.');
+  } catch(e) { msg('w_msg','فشل الحفظ: ' + e.message, true); }
+};
+
+$('w_test').onclick = async () => {
+  const ok = await tg('✅ تجربة ناجحة — الإشعارات تعمل.');
+  msg('w_msg', ok ? 'وصلك الإشعار؟ إذا وصل فالإعداد صحيح.'
+                  : 'لم يُرسل. تحقق من التوكن ومعرّف المحادثة.', !ok);
+};
+
+async function tg(text){
+  const tk = $('w_tgt').value.trim(), ch = $('w_tgc').value.trim();
+  if (!tk || !ch) return false;
+  try {
+    const r = await fetch('https://api.telegram.org/bot'+tk+'/sendMessage', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: ch, text, parse_mode:'HTML' })
+    });
+    return r.ok;
+  } catch(e) { return false; }
+}
+
+function msg(id, t, bad){
+  const el = $(id); el.textContent = t;
+  el.style.color = bad ? '#f87171' : '#4ade80';
+  setTimeout(()=>{ el.textContent=''; }, 7000);
+}
+
+// ---------- الإذن بالانصراف المبكر ----------
+$('btn_perm').onclick = async () => {
+  if (!liveStatus || !liveStatus.uid) return alert('لا يوجد موظف مسجّل حضور الآن');
+  try {
+    await setDoc(doc(db,'perm', liveStatus.uid),
+      { allowEarlyOut:true, date: iso(new Date()), by: adminEmail }, { merge:true });
+    $('permHint').textContent = 'تم الإذن لليوم. يقدر يسجّل انصراف الآن.';
+    $('permHint').style.color = '#4ade80';
+    tg('🟡 تم الإذن للموظف بالانصراف المبكر اليوم.');
+  } catch(e) { alert('فشل: ' + e.message); }
+};
+
+// ---------- متابعة الحالة الحيّة ----------
+let staleAlerted = false;
+
+function watchStatus(){
+  onSnapshot(collection(db,'status'), snap => {
+    let s = null;
+    snap.forEach(d => { const v = d.data(); v.uid = d.id; if (!s || v.onShift) s = v; });
+    liveStatus = s;
+    render(s);
+  });
+  setInterval(() => render(liveStatus), 30000);
+}
+
+function render(s){
+  if (!s) { $('st_name').textContent = 'لا يوجد بيانات'; return; }
+  const seenMs = s.lastSeen ? s.lastSeen.toMillis() : 0;
+  const ageMin = seenMs ? Math.floor((Date.now()-seenMs)/60000) : 999;
+  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  const inShiftWindow = s.onShift && nowMin < (s.shiftEnd || 0);
+
+  $('st_name').textContent = s.name || s.uid.slice(0,8);
+  $('st_shift').innerHTML = s.onShift
+    ? '<span class="pill ok">دوام جاري</span>'
+    : '<span class="pill">منصرف</span>';
+  $('st_in').innerHTML = !s.onShift ? '—'
+    : (s.inside ? '<span class="pill ok">داخل النطاق</span>'
+                : '<span class="pill bad">خارج النطاق</span>');
+  $('st_dist').textContent = (s.distance >= 0) ? Math.round(s.distance) + ' م' : '—';
+  $('st_seen').textContent = seenMs
+    ? (ageMin < 1 ? 'الآن' : 'قبل ' + ageMin + ' دقيقة') : '—';
+  $('st_batt').textContent = (s.battery >= 0) ? s.battery + '%' : '—';
+
+  const stale = inShiftWindow && ageMin > 6;
+  $('liveDot').style.background = !s.onShift ? 'var(--dim)'
+    : stale ? 'var(--amber)' : (s.inside ? 'var(--green)' : 'var(--red)');
+
+  const box = $('alerts'); box.innerHTML = '';
+  if (s.mock) box.innerHTML +=
+    '<div class="alert">🚨 تم كشف موقع وهمي على جهاز الموظف.</div>';
+  if (inShiftWindow && !s.inside) box.innerHTML +=
+    '<div class="alert">🔴 الموظف خارج نطاق العمل والدوام لم ينتهِ بعد.</div>';
+  if (stale) {
+    box.innerHTML +=
+      '<div class="alert">⚠️ انقطع الاتصال بجهاز الموظف قبل ' + ageMin +
+      ' دقيقة أثناء الدوام — قد يكون أقفل التطبيق أو أطفأ الموقع.</div>';
+    if (!staleAlerted) {
+      staleAlerted = true;
+      tg('⚠️ <b>انقطع الاتصال بجهاز الموظف</b>\nآخر نبضة قبل ' + ageMin +
+         ' دقيقة والدوام لم ينتهِ.');
+      notify('انقطع الاتصال بجهاز الموظف', 'آخر نبضة قبل ' + ageMin + ' دقيقة');
+    }
+  } else if (!stale) { staleAlerted = false; }
+}
+
+function notify(title, body){
+  try { if (Notification.permission === 'granted') new Notification(title, { body }); }
+  catch(e){}
+}
+
+// ---------- السجلات ----------
+document.querySelectorAll('.tabs button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); tab = b.dataset.tab; loadTable();
+  };
+});
+$('f_go').onclick = loadTable;
+
+const fmtTs = ts => ts ? new Date(ts.toMillis()).toLocaleString('ar-SA',
+  { dateStyle:'short', timeStyle:'short' }) : '—';
+
+const TYPES = { in:'حضور', out:'انصراف', exit:'غادر النطاق', return:'رجع للنطاق',
+                mock_during_shift:'موقع وهمي أثناء الدوام', cheat_attempt:'محاولة تلاعب' };
+
+async function loadTable(){
+  const head = $('tbl').querySelector('thead'), body = $('tbl').querySelector('tbody');
+  body.innerHTML = '<tr><td colspan="6" class="muted">جاري التحميل…</td></tr>';
+  const from = $('f_from').value, to = $('f_to').value;
+  try {
+    let rows = [];
+    if (tab === 'att') {
+      head.innerHTML = '<tr><th>النوع</th><th>الوقت (سيرفر)</th><th>تأخير</th>' +
+        '<th>المسافة</th><th>دقة GPS</th><th>الجهاز</th></tr>';
+      const q = query(collection(db,'attendance'), where('day','>=',from),
+                      where('day','<=',to), orderBy('day','desc'), limit(500));
+      (await getDocs(q)).forEach(d => rows.push(d.data()));
+      rows.sort((a,b)=>(b.serverTs?.toMillis()||0)-(a.serverTs?.toMillis()||0));
+      body.innerHTML = rows.length ? rows.map(r => '<tr>' +
+        '<td><span class="pill ' + (r.type==='in'?'ok':'') + '">' +
+          (TYPES[r.type]||r.type) + '</span></td>' +
+        '<td>' + fmtTs(r.serverTs) + '</td>' +
+        '<td>' + (r.late ? '<span class="pill warn">متأخر</span>' : '—') + '</td>' +
+        '<td>' + Math.round(r.distance||0) + ' م</td>' +
+        '<td>±' + Math.round(r.accuracy||0) + ' م</td>' +
+        '<td class="muted">' + (r.device||'—') + '</td></tr>').join('')
+        : '<tr><td colspan="6" class="muted">لا يوجد سجلات في هذه الفترة</td></tr>';
+    } else if (tab === 'evt') {
+      head.innerHTML = '<tr><th>الحدث</th><th>الوقت (سيرفر)</th><th>المسافة</th>' +
+        '<th>التفاصيل</th><th>الموقع</th></tr>';
+      const q = query(collection(db,'events'), orderBy('serverTs','desc'), limit(300));
+      (await getDocs(q)).forEach(d => rows.push(d.data()));
+      body.innerHTML = rows.length ? rows.map(r => '<tr>' +
+        '<td><span class="pill ' + (r.type==='return'?'ok':'bad') + '">' +
+          (TYPES[r.type]||r.type) + '</span></td>' +
+        '<td>' + fmtTs(r.serverTs) + '</td>' +
+        '<td>' + Math.round(r.distance||0) + ' م</td>' +
+        '<td class="muted">' + (r.detail||'—') + '</td>' +
+        '<td>' + (r.lat ? '<a href="https://maps.google.com/?q=' + r.lat + ',' + r.lng +
+          '" target="_blank" style="color:#60a5fa">خريطة</a>' : '—') + '</td></tr>').join('')
+        : '<tr><td colspan="5" class="muted">لا يوجد أحداث — وهذا جيد</td></tr>';
+    } else {
+      head.innerHTML = '<tr><th>الوقت</th><th>السبب</th><th>الحالة</th></tr>';
+      const q = query(collection(db,'requests'), orderBy('serverTs','desc'), limit(100));
+      (await getDocs(q)).forEach(d => rows.push(d.data()));
+      body.innerHTML = rows.length ? rows.map(r => '<tr>' +
+        '<td>' + fmtTs(r.serverTs) + '</td><td>' + (r.reason||'—') + '</td>' +
+        '<td><span class="pill warn">' + (r.status||'—') + '</span></td></tr>').join('')
+        : '<tr><td colspan="3" class="muted">لا يوجد طلبات</td></tr>';
+    }
+    lastRows = rows;
+    if (tab === 'att') summarize(rows);
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="6" class="muted">خطأ: ' + e.message + '</td></tr>';
+  }
+}
+
+function summarize(rows){
+  const days = {};
+  rows.forEach(r => {
+    if (!days[r.day]) days[r.day] = {};
+    if (r.type === 'in' && !days[r.day].in) days[r.day].in = r;
+    if (r.type === 'out') days[r.day].out = r;
+  });
+  const list = Object.values(days);
+  const present = list.length;
+  const late = list.filter(d => d.in && d.in.late).length;
+  let totalMin = 0;
+  list.forEach(d => {
+    if (d.in && d.out && d.in.serverTs && d.out.serverTs)
+      totalMin += Math.max(0, (d.out.serverTs.toMillis() - d.in.serverTs.toMillis())/60000);
+  });
+  const h = Math.floor(totalMin/60), m = Math.round(totalMin%60);
+  $('summary').innerHTML =
+    '<div class="stat"><span>أيام الحضور</span><b>' + present + '</b></div>' +
+    '<div class="stat"><span>أيام التأخير</span><b>' + late + '</b></div>' +
+    '<div class="stat"><span>مجموع ساعات العمل</span><b>' + h + ' س ' + m + ' د</b></div>' +
+    '<div class="stat"><span>متوسط اليوم</span><b>' +
+      (present ? (totalMin/present/60).toFixed(1) + ' س' : '—') + '</b></div>';
+}
+
+$('f_csv').onclick = () => {
+  if (!lastRows.length) return alert('لا يوجد بيانات للتصدير');
+  const keys = Object.keys(lastRows[0]);
+  const lines = [keys.join(',')];
+  lastRows.forEach(r => lines.push(keys.map(k => {
+    let v = r[k];
+    if (v && typeof v.toMillis === 'function') v = new Date(v.toMillis()).toISOString();
+    return '"' + String(v ?? '').replace(/"/g,'""') + '"';
+  }).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hudoor-' + tab + '-' + iso(new Date()) + '.csv';
+  a.click();
+};
+</script>
+</body>
+</html>

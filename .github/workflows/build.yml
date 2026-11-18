@@ -1,0 +1,53 @@
+name: بناء APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: تهيئة JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: تهيئة Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: تهيئة Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: بناء APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: إعادة تسمية الملف
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/hudoor.apk
+
+      - name: رفع الملف
+        uses: actions/upload-artifact@v4
+        with:
+          name: hudoor-apk
+          path: out/hudoor.apk
+
+      - name: إنشاء إصدار
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: الحضور v1.0.${{ github.run_number }}
+          files: out/hudoor.apk
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

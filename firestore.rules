@@ -1,0 +1,88 @@
+rules_version = '2';
+
+// ============================================================
+// قواعد حماية Firestore
+// استبدل ADMIN_EMAIL_HERE ببريد المدير (حسابك) ثم انسخ الملف
+// في: Firebase Console > Firestore Database > Rules > Publish
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthed() && request.auth.token.email == 'ADMIN_EMAIL_HERE';
+    }
+
+    function isOwner(uid) {
+      return isAuthed() && request.auth.uid == uid;
+    }
+
+    // ---------- إعدادات موقع العمل ----------
+    // الموظف يقرأ فقط. المدير وحده يعدّل الإحداثية والدوام.
+    match /config/{doc} {
+      allow read: if isAuthed();
+      allow write: if isAdmin();
+    }
+
+    // ---------- سجل البصمات ----------
+    // إضافة فقط. لا تعديل ولا حذف من أي جهة — ولا من المدير نفسه.
+    // الوقت المعتمد هو serverTs الذي يكتبه سيرفر Firestore، لا وقت الجهاز.
+    match /attendance/{id} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.type in ['in', 'out'];
+      allow update, delete: if false;
+    }
+
+    // ---------- سجل الأحداث (مغادرة، رجوع، محاولة تلاعب) ----------
+    // إضافة فقط، لا يمكن محوها.
+    match /events/{id} {
+      allow read: if isAuthed();
+      allow create: if isAuthed() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---------- الحالة الحيّة (النبضة) ----------
+    match /status/{uid} {
+      allow read: if isAuthed();
+      allow write: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    // ---------- بيانات الموظف وربط الجهاز ----------
+    // الموظف يقدر يربط جهازه مرة واحدة فقط. فك الربط للمدير وحده.
+    match /employees/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid)
+                    && (!('deviceId' in resource.data)
+                        || resource.data.deviceId == request.resource.data.deviceId);
+    }
+
+    // ---------- إذن الانصراف المبكر ----------
+    // المدير وحده يمنح الإذن. الموظف يقرأ فقط.
+    match /perm/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ---------- طلبات الاستئذان ----------
+    match /requests/{id} {
+      allow read: if isAuthed();
+      allow create: if isAuthed() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // أي شيء آخر مرفوض
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
