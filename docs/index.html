@@ -52,6 +52,10 @@
   .tabs button{background:#0b1220;border:1px solid var(--line);font-weight:500}
   .tabs button.on{background:var(--green);border-color:var(--green)}
   .hint{font-size:11px;color:var(--dim);margin-top:4px}
+  .step{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+  .step h3{font-size:14px;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+  .step a{text-decoration:none}
+  code{background:#0b1220;padding:1px 6px;border-radius:5px;font-size:12px}
 </style>
 </head>
 <body>
@@ -104,6 +108,61 @@
   </div>
 
   <div id="alerts"></div>
+
+  <!-- ===== معالج الإعداد ===== -->
+  <div class="card" id="wizard">
+    <h2>معالج الإعداد <span class="pill warn" id="wz_state">غير مكتمل</span></h2>
+    <p class="muted">اتبع الخطوات بالترتيب. كل خطوة فيها زر يفتح الصفحة المطلوبة مباشرة.</p>
+
+    <!-- 1 -->
+    <div class="step">
+      <h3>١ — قواعد الحماية <span id="wz1" class="pill warn">مطلوبة</span></h3>
+      <p class="muted">بدونها بيانات الحضور مكشوفة لأي أحد. انسخ النص واضغط الزر والصقه في الصفحة
+        التي تفتح، ثم اضغط <b>Publish</b>.</p>
+      <textarea id="rulesBox" rows="7" readonly style="font-family:monospace;font-size:11px;direction:ltr"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="cp_rules">انسخ القواعد</button>
+        <a id="lk_rules" target="_blank" style="flex:1"><button class="blue" style="width:100%">افتح صفحة القواعد</button></a>
+        <button class="sec" id="chk_rules">تحقق</button>
+      </div>
+      <div class="hint" id="m_rules"></div>
+    </div>
+
+    <!-- 2 -->
+    <div class="step">
+      <h3>٢ — حساب الموظف</h3>
+      <p class="muted">أنشئه من هنا مباشرة. تأكد أولاً أن <b>Email/Password</b> مفعّل في Firebase.</p>
+      <div class="row">
+        <div><label>اسم الموظف</label><input id="e_name" placeholder="محمد العتيبي"></div>
+        <div><label>بريد الدخول</label><input id="e_email" placeholder="employee1@work.com"></div>
+        <div><label>كلمة مرور</label><input id="e_pw" placeholder="٨ أحرف على الأقل"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="e_make">أنشئ حساب الموظف</button>
+        <a id="lk_auth" target="_blank" style="flex:1"><button class="sec" style="width:100%">تفعيل Email/Password</button></a>
+      </div>
+      <div class="hint" id="m_emp"></div>
+      <div id="empList" class="muted" style="margin-top:8px"></div>
+    </div>
+
+    <!-- 3 -->
+    <div class="step">
+      <h3>٣ — إشعارات تيليجرام</h3>
+      <p class="muted">افتح <b>@BotFather</b> في تيليجرام، أرسل <code>/newbot</code>، خذ التوكن والصقه هنا.
+        ثم أرسل أي رسالة لبوتك واضغط «اكتشف رقمي» — أجيب رقم محادثتك تلقائياً.</p>
+      <label>توكن البوت</label>
+      <input id="tg_tok" placeholder="123456789:AAE..." style="direction:ltr">
+      <div class="row" style="margin-top:10px">
+        <button class="blue" id="tg_find">اكتشف رقمي تلقائياً</button>
+        <button id="tg_try">أرسل تجربة</button>
+      </div>
+      <div class="hint" id="m_tg"></div>
+    </div>
+
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+      <button class="sec" id="wz_hide" style="font-size:12px;padding:7px 12px">إخفاء المعالج</button>
+    </div>
+  </div>
 
   <!-- الحالة الحيّة -->
   <div class="card">
@@ -320,6 +379,7 @@ async function start(){
   const t = new Date(), first = new Date(t.getFullYear(), t.getMonth(), 1);
   $('f_from').value = iso(first); $('f_to').value = iso(t);
 
+  initWizard();
   watchStatus();
   loadTable();
   if ('Notification' in window && Notification.permission === 'default')
@@ -534,6 +594,176 @@ function summarize(rows){
     '<div class="stat"><span>مجموع ساعات العمل</span><b>' + h + ' س ' + m + ' د</b></div>' +
     '<div class="stat"><span>متوسط اليوم</span><b>' +
       (present ? (totalMin/present/60).toFixed(1) + ' س' : '—') + '</b></div>';
+}
+
+// ================= معالج الإعداد =================
+
+const RULES = () => `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthed()      { return request.auth != null; }
+    function isAdmin()       { return isAuthed() && request.auth.token.email == '${adminEmail}'; }
+    function isOwner(uid)    { return isAuthed() && request.auth.uid == uid; }
+
+    match /config/{doc} {
+      allow read:  if isAuthed();
+      allow write: if isAdmin();
+    }
+    match /attendance/{id} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.type in ['in', 'out'];
+      allow update, delete: if false;
+    }
+    match /events/{id} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /status/{uid} {
+      allow read:   if isAuthed();
+      allow write:  if isOwner(uid);
+      allow delete: if false;
+    }
+    match /employees/{uid} {
+      allow read:   if isOwner(uid) || isAdmin();
+      allow write:  if isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid)
+                    && (!('deviceId' in resource.data)
+                        || resource.data.deviceId == request.resource.data.deviceId);
+    }
+    match /perm/{uid} {
+      allow read:  if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+    match /requests/{id} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}`;
+
+function initWizard(){
+  $('rulesBox').value = RULES();
+  $('lk_rules').href = 'https://console.firebase.google.com/project/' + cfg.pid + '/firestore/rules';
+  $('lk_auth').href  = 'https://console.firebase.google.com/project/' + cfg.pid +
+                       '/authentication/providers';
+  if (localStorage.getItem('hudoor_wz') === 'off') $('wizard').classList.add('hide');
+  listEmployees();
+}
+
+$('wz_hide').onclick = () => {
+  localStorage.setItem('hudoor_wz','off');
+  $('wizard').classList.add('hide');
+};
+
+$('cp_rules').onclick = async () => {
+  try { await navigator.clipboard.writeText(RULES()); msg('m_rules','تم النسخ. الصقه في الصفحة واضغط Publish.'); }
+  catch(e) { $('rulesBox').select(); msg('m_rules','اختر النص وانسخه يدوياً', true); }
+};
+
+/** اختبار فعلي: هل القواعد تمنع الكتابة غير المصرّح بها؟ */
+$('chk_rules').onclick = async () => {
+  msg('m_rules','جاري التحقق…');
+  try {
+    // محاولة الكتابة في مسار محجوز — يجب أن تُرفض
+    await setDoc(doc(db,'__probe__','x'), { t: Date.now() });
+    $('wz1').className = 'pill bad'; $('wz1').textContent = 'غير مطبّقة';
+    msg('m_rules','القواعد غير مطبّقة — البيانات مكشوفة. الصق القواعد واضغط Publish.', true);
+  } catch(e) {
+    $('wz1').className = 'pill ok'; $('wz1').textContent = 'مطبّقة';
+    msg('m_rules','القواعد مطبّقة. السجل محمي من التعديل والحذف.');
+    checkDone();
+  }
+};
+
+/** إنشاء حساب الموظف عبر Firebase Auth REST — بدون الخروج من حسابك */
+$('e_make').onclick = async () => {
+  const name = $('e_name').value.trim(), em = $('e_email').value.trim(), pw = $('e_pw').value;
+  if (!name || !em || pw.length < 6) return msg('m_emp','أكمل الحقول، وكلمة المرور ٦ أحرف على الأقل', true);
+  $('e_make').disabled = true;
+  msg('m_emp','جاري الإنشاء…');
+  try {
+    const r = await fetch(
+      'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + cfg.key,
+      { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email: em, password: pw, returnSecureToken: false }) });
+    const j = await r.json();
+    if (!r.ok) {
+      const e = j.error?.message || '';
+      let ar = e;
+      if (e === 'EMAIL_EXISTS') ar = 'هذا البريد مستخدم مسبقاً';
+      else if (e.includes('OPERATION_NOT_ALLOWED') || e.includes('ADMIN_ONLY'))
+        ar = 'فعّل Email/Password في Firebase أولاً (الزر المجاور)';
+      else if (e === 'WEAK_PASSWORD : Password should be at least 6 characters')
+        ar = 'كلمة المرور قصيرة';
+      throw new Error(ar);
+    }
+    await setDoc(doc(db,'employees', j.localId), { name, email: em }, { merge:true });
+    msg('m_emp','تم إنشاء حساب ' + name + '. أعطه البريد وكلمة المرور ليسجّل دخوله في التطبيق.');
+    $('e_name').value = $('e_email').value = $('e_pw').value = '';
+    listEmployees();
+  } catch(e) {
+    msg('m_emp', e.message, true);
+  }
+  $('e_make').disabled = false;
+};
+
+async function listEmployees(){
+  try {
+    const snap = await getDocs(collection(db,'employees'));
+    const names = [];
+    snap.forEach(d => {
+      const v = d.data();
+      names.push((v.name || d.id.slice(0,8)) +
+        (v.deviceId ? ' — مربوط بجهاز: ' + (v.deviceLabel || 'جهاز') : ' — لم يربط جهازه بعد'));
+    });
+    $('empList').innerHTML = names.length
+      ? 'الموظفون: ' + names.join(' · ') : '';
+  } catch(e) { $('empList').textContent = ''; }
+}
+
+/** اكتشاف Chat ID تلقائياً من getUpdates */
+$('tg_find').onclick = async () => {
+  const tk = $('tg_tok').value.trim();
+  if (!tk) return msg('m_tg','الصق التوكن أولاً', true);
+  msg('m_tg','جاري البحث…');
+  try {
+    const r = await fetch('https://api.telegram.org/bot' + tk + '/getUpdates');
+    const j = await r.json();
+    if (!j.ok) throw new Error('التوكن غير صحيح');
+    const ids = [...new Set((j.result||[])
+      .map(u => u.message?.chat?.id || u.my_chat_member?.chat?.id)
+      .filter(Boolean))];
+    if (!ids.length) throw new Error('أرسل أي رسالة لبوتك في تيليجرام ثم اضغط الزر مرة ثانية');
+    $('w_tgt').value = tk;
+    $('w_tgc').value = ids[ids.length-1];
+    msg('m_tg','تم: رقم محادثتك ' + ids[ids.length-1] + '. اضغط «أرسل تجربة» ثم «حفظ الإعدادات».');
+  } catch(e) { msg('m_tg', e.message, true); }
+};
+
+$('tg_try').onclick = async () => {
+  if ($('tg_tok').value.trim() && !$('w_tgt').value.trim())
+    $('w_tgt').value = $('tg_tok').value.trim();
+  const ok = await tg('✅ تجربة من لوحة المتابعة — الإشعارات تعمل.');
+  if (ok) {
+    msg('m_tg','أُرسلت. إذا وصلتك اضغط «حفظ الإعدادات» في الأسفل.');
+    await setDoc(doc(db,'config','workplace'),
+      { tgToken: $('w_tgt').value.trim(), tgChat: $('w_tgc').value.trim() }, { merge:true });
+  } else {
+    msg('m_tg','لم تُرسل. تأكد من التوكن ومن أنك ضغطت «اكتشف رقمي».', true);
+  }
+};
+
+function checkDone(){
+  const done = $('wz1').textContent === 'مطبّقة' && ($('w_tgc').value || '').trim();
+  $('wz_state').className = done ? 'pill ok' : 'pill warn';
+  $('wz_state').textContent = done ? 'مكتمل' : 'غير مكتمل';
 }
 
 $('f_csv').onclick = () => {
