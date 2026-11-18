@@ -20,8 +20,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: تهيئة Android SDK
-        uses: android-actions/setup-android@v3
+      - name: قبول تراخيص Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
 
       - name: تهيئة Gradle
         uses: gradle/actions/setup-gradle@v4
